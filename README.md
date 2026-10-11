@@ -26,7 +26,7 @@ Hold antallet af DMI-kald nede: koordinatoren har en begrænser på 2 samtidige 
 
 ## Visningen
 
-`dashboard/vejret.json` er visningen som den ser ud i HA, med radarens position sat til Randers centrum som eksempel. Den kan sættes ind igen som en visning i
+`dashboard/vejret.json` er visningen som den ser ud i HA. Radaren følger Home Assistants hjemposition. Den kan sættes ind igen som en visning i
 `energi-overblik` (eller et andet dashboard) med HA's rå konfigurationseditor.
 
 Tests og eksempler bruger Randers centrum (56.4607, 10.0364) som position. Integrationen bruger selv Home Assistants hjemposition.
