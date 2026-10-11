@@ -75,10 +75,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: DmiVejrConfigEntry) -> b
     await data.forecast.async_config_entry_first_refresh()
     await data.observations.async_refresh()
     # The rest are extras too; their entities stay unavailable until DMI answers.
-    for extra in (data.warnings, data.climate, data.ocean, data.edr):
+    for extra in (data.warnings, data.climate, data.ocean):
         await extra.async_refresh()
     entry.runtime_data = data
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    # DMI's forecast API takes three spaced-out requests; start-up does not wait for them.
+    entry.async_create_task(hass, data.edr.async_refresh(), "dmi_vejr forecast API first refresh")
     # The satellite map (12 pictures from EUMETSAT) is drawn after start-up;
     # its image entity is unavailable until then.
     entry.async_create_background_task(

@@ -111,6 +111,8 @@ _EDR_TIMEOUT = aiohttp.ClientTimeout(total=60)
 # DMI answers 429 when one client sends many requests at once.
 _DMI_CONCURRENCY = 2
 _OBS_PAGE = 10000
+# DMI's forecast API answers 429 to requests that come back to back; space them out.
+EDR_SPACING_S = 3.0
 
 _CURRENT = (
     "temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,"
@@ -549,6 +551,7 @@ class EdrCoordinator(DataUpdateCoordinator[EdrData]):
                 peaks_6h[key] = peak(values, now, 6)
         except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as err:
             errors.append(f"EPS: {err}")
+        await asyncio.sleep(EDR_SPACING_S)
         try:
             pct = await self._position(
                 "harmonie_dini_eps_percentiles",
@@ -561,6 +564,7 @@ class EdrCoordinator(DataUpdateCoordinator[EdrData]):
                 bands[key] = levels
         except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as err:
             errors.append(f"PCT: {err}")
+        await asyncio.sleep(EDR_SPACING_S)
         try:
             sf = await self._position("harmonie_dini_sf", [*EDR_SF, *EDR_SF_SERIES])
             lightning = [

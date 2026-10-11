@@ -20,3 +20,12 @@ def auto_enable_custom_integrations(request):
     if "hass" in request.fixturenames:
         request.getfixturevalue("enable_custom_integrations")
     yield
+
+
+@pytest.fixture(autouse=True)
+def _no_edr_spacing(monkeypatch):
+    """The pause between DMI forecast API requests is real time; not in tests."""
+    from custom_components.dmi_vejr import coordinator
+
+    monkeypatch.setattr(coordinator, "EDR_SPACING_S", 0)
+    yield
