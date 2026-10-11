@@ -5,6 +5,8 @@ from datetime import timedelta
 DOMAIN = "dmi_vejr"
 NAME = "DMI Vejr"
 
+CONF_ADDRESS = "address"
+CONF_LOCATION = "location"
 CONF_LATITUDE = "latitude"
 CONF_LONGITUDE = "longitude"
 CONF_MUNICIPALITY = "municipality"

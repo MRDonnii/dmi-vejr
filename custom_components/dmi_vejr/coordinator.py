@@ -100,6 +100,7 @@ from .observations import (
     lightning_stats,
     nearest_observation,
 )
+from .places import entry_settings
 from .radar import RadarFormatError, RadarSample, RadarWindow, read_window, sample_window
 from .radar_map import RadarFrame, render_frames
 from . import satellite as sat
@@ -165,8 +166,8 @@ class RadarCoordinator(DataUpdateCoordinator[RadarData]):
             hass, _LOGGER, name="DMI radar", update_interval=RADAR_INTERVAL,
             config_entry=entry,
         )
-        self._lat = entry.data[CONF_LATITUDE]
-        self._lon = entry.data[CONF_LONGITUDE]
+        self._lat = entry_settings(entry)[CONF_LATITUDE]
+        self._lon = entry_settings(entry)[CONF_LONGITUDE]
         self._frames: dict[str, RadarWindow] = {}
         # Set by the entry setup; its strikes are drawn on the map.
         self.lightning: LightningCoordinator | None = None
@@ -254,8 +255,8 @@ class ObservationCoordinator(DataUpdateCoordinator[dict[str, Observation | None]
             hass, _LOGGER, name="DMI stations", update_interval=OBS_INTERVAL,
             config_entry=entry,
         )
-        self._lat = entry.data[CONF_LATITUDE]
-        self._lon = entry.data[CONF_LONGITUDE]
+        self._lat = entry_settings(entry)[CONF_LATITUDE]
+        self._lon = entry_settings(entry)[CONF_LONGITUDE]
         self._names: dict[str, str] | None = None
 
     async def _get(self, url: str, params: dict[str, Any]) -> dict[str, Any]:
@@ -319,8 +320,8 @@ class LightningCoordinator(DataUpdateCoordinator[LightningStats]):
             hass, _LOGGER, name="DMI lightning", update_interval=LIGHTNING_INTERVAL,
             config_entry=entry,
         )
-        self._lat = entry.data[CONF_LATITUDE]
-        self._lon = entry.data[CONF_LONGITUDE]
+        self._lat = entry_settings(entry)[CONF_LATITUDE]
+        self._lon = entry_settings(entry)[CONF_LONGITUDE]
 
     async def _async_update_data(self) -> LightningStats:
         now = dt_util.utcnow()
@@ -347,7 +348,7 @@ class ClimateCoordinator(DataUpdateCoordinator[dict[date, dict[str, float]]]):
             hass, _LOGGER, name="DMI climate data", update_interval=CLIMATE_INTERVAL,
             config_entry=entry,
         )
-        self.municipality = entry.data.get(CONF_MUNICIPALITY, DEFAULT_MUNICIPALITY)
+        self.municipality = entry_settings(entry).get(CONF_MUNICIPALITY, DEFAULT_MUNICIPALITY)
 
     async def _async_update_data(self) -> dict[date, dict[str, float]]:
         tz = dt_util.get_time_zone(self.hass.config.time_zone)
@@ -387,8 +388,8 @@ class OceanCoordinator(DataUpdateCoordinator[OceanData]):
             hass, _LOGGER, name="DMI ocean", update_interval=OCEAN_INTERVAL,
             config_entry=entry,
         )
-        self._lat = entry.data[CONF_LATITUDE]
-        self._lon = entry.data[CONF_LONGITUDE]
+        self._lat = entry_settings(entry)[CONF_LATITUDE]
+        self._lon = entry_settings(entry)[CONF_LONGITUDE]
         self._names: dict[str, str] | None = None
         self._tide_station: tuple[str, str | None] | None = None
         self._harbour: tuple[float, float] | None = None  # (lat, lon) for the storm surge model
@@ -489,7 +490,7 @@ class WarningsCoordinator(DataUpdateCoordinator[Warnings]):
             hass, _LOGGER, name="DMI warnings", update_interval=WARNINGS_INTERVAL,
             config_entry=entry,
         )
-        self.area = entry.data.get(CONF_WARNING_AREA, DEFAULT_WARNING_AREA)
+        self.area = entry_settings(entry).get(CONF_WARNING_AREA, DEFAULT_WARNING_AREA)
 
     async def _async_update_data(self) -> Warnings:
         try:
@@ -524,7 +525,7 @@ class EdrCoordinator(DataUpdateCoordinator[EdrData]):
             hass, _LOGGER, name="DMI forecast probabilities", update_interval=EDR_INTERVAL,
             config_entry=entry,
         )
-        self._coords = f"POINT({entry.data[CONF_LONGITUDE]:.4f} {entry.data[CONF_LATITUDE]:.4f})"
+        self._coords = f"POINT({entry_settings(entry)[CONF_LONGITUDE]:.4f} {entry_settings(entry)[CONF_LATITUDE]:.4f})"
 
     async def _position(self, collection: str, names: list[str]) -> dict[str, Any]:
         return await _get_json(
@@ -614,8 +615,8 @@ class ForecastCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             hass, _LOGGER, name="DMI forecast", update_interval=FORECAST_INTERVAL,
             config_entry=entry,
         )
-        self._lat = entry.data[CONF_LATITUDE]
-        self._lon = entry.data[CONF_LONGITUDE]
+        self._lat = entry_settings(entry)[CONF_LATITUDE]
+        self._lon = entry_settings(entry)[CONF_LONGITUDE]
 
     async def _async_update_data(self) -> dict[str, Any]:
         base = {
@@ -688,7 +689,7 @@ class SatelliteCoordinator(DataUpdateCoordinator[SatelliteData]):
             config_entry=entry,
         )
         self._view = sat.SatView(
-            entry.data[CONF_LATITUDE], entry.data[CONF_LONGITUDE], SAT_HALF_KM, SAT_SIZE
+            entry_settings(entry)[CONF_LATITUDE], entry_settings(entry)[CONF_LONGITUDE], SAT_HALF_KM, SAT_SIZE
         )
         self._frames: dict[datetime, bytes] = {}
         self._overlay: bytes | None = None

@@ -10,11 +10,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 import io
+import math
 from pathlib import Path
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
+from .places import TOWNS
 from .radar import GridWindow
 
 BASEMAP = Path(__file__).parent / "basemap.png"
@@ -35,19 +37,19 @@ BACKGROUND = (18, 24, 32)
 NO_COVERAGE = (34, 36, 42)
 COAST = {255: (110, 126, 145), 180: (80, 100, 122), 120: (120, 92, 92)}
 
-# Towns around Langå (lat, lon).
-TOWNS = [
-    ("Randers", 56.4607, 10.0364), ("Aarhus", 56.1567, 10.2108),
-    ("Viborg", 56.4532, 9.4020), ("Silkeborg", 56.1697, 9.5451),
-    ("Hobro", 56.6431, 9.7903), ("Bjerringbro", 56.3768, 9.6606),
-    ("Skive", 56.5667, 9.0270), ("Grenaa", 56.4155, 10.8786),
-    ("Hadsten", 56.3277, 10.0496), ("Mariager", 56.6496, 10.0003),
-]
 RINGS_KM = (10, 25, 50)
 # Lightning by age: recent strikes bright, older ones dimmer.
 STRIKE_RECENT_MIN = 10
 STRIKE_RECENT = (255, 236, 60)
 STRIKE_OLDER = (255, 150, 40)
+
+
+TOWN_SPACING_PX = 44
+
+
+def _room(drawn: list[tuple[float, float]], x: float, y: float) -> bool:
+    """True when no town already drawn is too close for another label."""
+    return all(math.hypot(x - dx, y - dy) >= TOWN_SPACING_PX for dx, dy in drawn)
 
 
 @dataclass(frozen=True)
@@ -123,10 +125,12 @@ def render_frames(
         r = km / px_km * scale
         draw.ellipse((cx - r, cy - r, cx + r, cy + r), outline=(200, 210, 225, 90), width=1)
         draw.text((cx + r * 0.71 + 3, cy - r * 0.71 - 14), f"{km} km", fill=(200, 210, 225, 150), font=small)
-    for name, lat, lon in TOWNS:
+    drawn: list[tuple[float, float]] = []
+    for name, lat, lon, _big in TOWNS:
         row, col = project(lat, lon)
         tx, ty = (col - window.c0 + 0.5) * scale, (row - window.r0 + 0.5) * scale
-        if 0 <= tx < w * scale and 0 <= ty < h * scale:
+        if 0 <= tx < w * scale and 0 <= ty < h * scale and _room(drawn, tx, ty):
+            drawn.append((tx, ty))
             draw.ellipse((tx - 2, ty - 2, tx + 2, ty + 2), fill=(225, 230, 240, 220))
             draw.text((tx + 5, ty - 8), name, fill=(225, 230, 240, 220), font=small)
     shown = 0

@@ -3,17 +3,47 @@
     "step": {
       "user": {
         "title": "DMI Vejr",
-        "description": "DMI radar, stationer, lyn, klimadata, havn, varsler og HARMONIE. Placering er som standard Hjem. Kommune 0730 = Randers; varslingsområde DK004 = Østjylland.",
+        "description": "Skriv en adresse i Danmark, eller flyt nålen på kortet (som standard Hjem). Kommunen til DMI's klimadata og varslingsregionen findes automatisk ud fra stedet, men kan vælges her.",
         "data": {
-          "latitude": "Breddegrad",
-          "longitude": "Længdegrad",
-          "municipality": "Kommunenummer (DMI klimadata)",
-          "warning_area": "Varslingsområde (EMMA-id)"
+          "address": "Adresse",
+          "location": "Placering på kortet",
+          "municipality": "Kommune (DMI klimadata)",
+          "warning_area": "Varslingsregion (DMI varsler)"
+        },
+        "data_description": {
+          "address": "Fx \"Torvegade 1, Randers\". Når der står en adresse, bruges den i stedet for nålen på kortet."
         }
       }
     },
+    "error": {
+      "address_not_found": "Adressen blev ikke fundet i Danmark.",
+      "cannot_connect": "OpenStreetMap svarer ikke. Prøv igen, eller brug nålen på kortet uden adresse.",
+      "outside_denmark": "Stedet ligger ikke i Danmark. DMI's data dækker kun Danmark."
+    },
     "abort": {
       "single_instance_allowed": "DMI Vejr er allerede sat op."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Skift sted",
+        "description": "Skriv en adresse i Danmark, eller flyt nålen på kortet (som standard Hjem). Kommunen til DMI's klimadata og varslingsregionen findes automatisk ud fra stedet, men kan vælges her.",
+        "data": {
+          "address": "Adresse",
+          "location": "Placering på kortet",
+          "municipality": "Kommune (DMI klimadata)",
+          "warning_area": "Varslingsregion (DMI varsler)"
+        },
+        "data_description": {
+          "address": "Fx \"Torvegade 1, Randers\". Når der står en adresse, bruges den i stedet for nålen på kortet."
+        }
+      }
+    },
+    "error": {
+      "address_not_found": "Adressen blev ikke fundet i Danmark.",
+      "cannot_connect": "OpenStreetMap svarer ikke. Prøv igen, eller brug nålen på kortet uden adresse.",
+      "outside_denmark": "Stedet ligger ikke i Danmark. DMI's data dækker kun Danmark."
     }
   }
 }

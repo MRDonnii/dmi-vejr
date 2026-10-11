@@ -19,6 +19,8 @@ import re
 
 from PIL import Image, ImageDraw, ImageFont
 
+from .places import TOWNS
+
 WMS_URL = "https://view.eumetsat.int/geoserver/wms"
 LAYER = "mtg_fd:rgb_geocolour"
 # The layer's own capabilities (a few kB) carry the newest picture time.
@@ -26,16 +28,7 @@ CAPS_URL = "https://view.eumetsat.int/geoserver/mtg_fd/rgb_geocolour/ows"
 OVERLAYS = "backgrounds:ne_10m_coastline,backgrounds:ne_boundary_lines_land"
 STEP = timedelta(minutes=10)
 EARTH_R = 6378137.0
-
-# Towns on the satellite map (lat, lon).
-TOWNS = [
-    ("Randers", 56.4607, 10.0364), ("Aarhus", 56.1567, 10.2108),
-    ("Aalborg", 57.0488, 9.9217), ("Odense", 55.4038, 10.4024),
-    ("København", 55.6761, 12.5683), ("Esbjerg", 55.4765, 8.4594),
-    ("Herning", 56.1393, 8.9738), ("Göteborg", 57.7089, 11.9746),
-    ("Kiel", 54.3233, 10.1228),
-]
-
+TOWN_SPACING_PX = 50
 
 @dataclass(frozen=True)
 class SatView:
@@ -137,9 +130,14 @@ def render_frames(
         top.alpha_composite(lines)
     draw = ImageDraw.Draw(top)
     small, font = _font(12), _font(14)
-    for name, lat, lon in TOWNS:
+    drawn: list[tuple[float, float]] = []
+    for name, lat, lon, big in TOWNS:
+        if not big:
+            continue
         tx, ty = view.pixel(lat, lon)
-        if 0 <= tx < view.size and 0 <= ty < view.size:
+        room = all(math.hypot(tx - dx, ty - dy) >= TOWN_SPACING_PX for dx, dy in drawn)
+        if 0 <= tx < view.size and 0 <= ty < view.size and room:
+            drawn.append((tx, ty))
             draw.ellipse((tx - 2, ty - 2, tx + 2, ty + 2), fill=(255, 255, 255, 220))
             draw.text((tx + 5, ty - 8), name, fill=(255, 255, 255, 230), font=small,
                       stroke_width=2, stroke_fill=(0, 0, 0, 150))

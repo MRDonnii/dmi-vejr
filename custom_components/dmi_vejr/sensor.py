@@ -67,6 +67,7 @@ from .extras import (
     window_sum,
 )
 from .extras import peak as series_peak
+from .places import municipality_name
 from .radar import RadarSample
 
 _WIND_DIRECTION = getattr(SensorDeviceClass, "WIND_DIRECTION", None)
@@ -777,7 +778,8 @@ class ClimateSensor(CoordinatorEntity[ClimateCoordinator], _Base):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
-        attrs = {"kilde": f"DMI klimadata, kommune {self.coordinator.municipality}"}
+        municipality = self.coordinator.municipality
+        attrs = {"kilde": f"DMI klimadata, {municipality_name(municipality) or 'kommune'} ({municipality})"}
         if self.entity_description.latest:
             today = dt_util.now().date()
             attrs["dato"] = (today if self._day(0) is not None else today - timedelta(days=1)).isoformat()

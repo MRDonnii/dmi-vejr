@@ -1,6 +1,6 @@
 """DMI Vejr: DMI radar, stations, lightning and HARMONIE forecast.
 
-Private integration for this installation. Everything weather-related comes
+Everything weather-related comes
 from DMI open data: radar (500 m composite every 5 minutes) for "raining now"
 and an animated radar map with DMI lightning, the nearest DMI stations for
 every measured value they report, DMI lightning detection, DMI climate data

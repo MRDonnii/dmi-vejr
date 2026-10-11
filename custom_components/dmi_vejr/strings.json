@@ -3,17 +3,47 @@
     "step": {
       "user": {
         "title": "DMI Vejr",
-        "description": "DMI radar, stations, lightning, climate data, harbour, warnings and HARMONIE. The location defaults to Home. Municipality 0730 = Randers; warning area DK004 = East Jutland.",
+        "description": "Type an address in Denmark, or move the pin on the map (Home by default). The municipality for DMI's climate data and the warning region follow the place automatically, or can be chosen here.",
         "data": {
-          "latitude": "Latitude",
-          "longitude": "Longitude",
-          "municipality": "Municipality number (DMI climate data)",
-          "warning_area": "Warning area (EMMA id)"
+          "address": "Address",
+          "location": "Place on the map",
+          "municipality": "Municipality (DMI climate data)",
+          "warning_area": "Warning region (DMI warnings)"
+        },
+        "data_description": {
+          "address": "E.g. \"Torvegade 1, Randers\". An address is used instead of the pin on the map."
         }
       }
     },
+    "error": {
+      "address_not_found": "The address was not found in Denmark.",
+      "cannot_connect": "OpenStreetMap does not answer. Try again, or use the pin on the map without an address.",
+      "outside_denmark": "The place is not in Denmark. DMI's data only covers Denmark."
+    },
     "abort": {
       "single_instance_allowed": "DMI Vejr is already set up."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Change place",
+        "description": "Type an address in Denmark, or move the pin on the map (Home by default). The municipality for DMI's climate data and the warning region follow the place automatically, or can be chosen here.",
+        "data": {
+          "address": "Address",
+          "location": "Place on the map",
+          "municipality": "Municipality (DMI climate data)",
+          "warning_area": "Warning region (DMI warnings)"
+        },
+        "data_description": {
+          "address": "E.g. \"Torvegade 1, Randers\". An address is used instead of the pin on the map."
+        }
+      }
+    },
+    "error": {
+      "address_not_found": "The address was not found in Denmark.",
+      "cannot_connect": "OpenStreetMap does not answer. Try again, or use the pin on the map without an address.",
+      "outside_denmark": "The place is not in Denmark. DMI's data only covers Denmark."
     }
   }
 }

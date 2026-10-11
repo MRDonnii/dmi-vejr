@@ -338,15 +338,101 @@ async def test_radar_outage_does_not_block_setup_forever(hass: HomeAssistant, ai
     assert entry.state.name == "SETUP_RETRY"
 
 
-async def test_config_flow_defaults_to_home(hass: HomeAssistant) -> None:
+NOMINATIM_SEARCH = "https://nominatim.openstreetmap.org/search"
+NOMINATIM_REVERSE = "https://nominatim.openstreetmap.org/reverse"
+
+
+async def test_config_flow_defaults_to_home(hass: HomeAssistant, aioclient_mock) -> None:
     hass.config.latitude, hass.config.longitude = LAT, LON
+    aioclient_mock.get(NOMINATIM_REVERSE, json={"address": {"municipality": "Randers Kommune"}})
     result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
     assert result["type"] == "form"
-    result = await hass.config_entries.flow.async_configure(result["flow_id"], {"latitude": LAT, "longitude": LON})
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {"location": {"latitude": LAT, "longitude": LON}, "municipality": "auto", "warning_area": "auto"},
+    )
     assert result["type"] == "create_entry"
+    assert result["title"] == "DMI Vejr"
     assert result["data"] == {
-        "latitude": LAT, "longitude": LON, "municipality": "0730", "warning_area": "DK004",
+        "latitude": LAT, "longitude": LON, "municipality": "0730", "warning_area": "DK004", "address": None,
     }
+
+
+async def test_config_flow_finds_an_address(hass: HomeAssistant, aioclient_mock) -> None:
+    aioclient_mock.get(NOMINATIM_SEARCH, json=[{
+        "lat": "55.39591", "lon": "10.38831", "display_name": "Flakhaven 2, Odense",
+        "address": {"municipality": "Odense Kommune"},
+    }])
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {"address": "Flakhaven 2, Odense", "location": {"latitude": LAT, "longitude": LON},
+         "municipality": "auto", "warning_area": "auto"},
+    )
+    assert result["type"] == "create_entry"
+    assert result["title"] == "Flakhaven 2, Odense"
+    assert result["data"] == {
+        "latitude": 55.39591, "longitude": 10.38831, "municipality": "0461", "warning_area": "DK006",
+        "address": "Flakhaven 2, Odense",
+    }
+
+
+async def test_config_flow_address_not_found(hass: HomeAssistant, aioclient_mock) -> None:
+    aioclient_mock.get(NOMINATIM_SEARCH, json=[])
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {"address": "Findes ikke 99", "location": {"latitude": LAT, "longitude": LON},
+         "municipality": "auto", "warning_area": "auto"},
+    )
+    assert result["type"] == "form"
+    assert result["errors"] == {"address": "address_not_found"}
+
+
+async def test_config_flow_rejects_places_outside_denmark(hass: HomeAssistant, aioclient_mock) -> None:
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {"location": {"latitude": 52.52, "longitude": 13.40}, "municipality": "auto", "warning_area": "auto"},
+    )
+    assert result["type"] == "form"
+    assert result["errors"] == {"base": "outside_denmark"}
+
+
+async def test_config_flow_without_openstreetmap_uses_nearest_municipality(hass: HomeAssistant, aioclient_mock) -> None:
+    aioclient_mock.get(NOMINATIM_REVERSE, status=503)
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {"location": {"latitude": 57.05, "longitude": 9.92}, "municipality": "auto", "warning_area": "DK002"},
+    )
+    assert result["type"] == "create_entry"
+    assert result["data"]["municipality"] == "0851"  # Aalborg
+    assert result["data"]["warning_area"] == "DK002"  # chosen by hand
+
+
+async def test_options_move_the_integration(hass: HomeAssistant, aioclient_mock, freezer: FrozenDateTimeFactory) -> None:
+    freezer.move_to(NOW)
+    _mock_apis(aioclient_mock)
+    entry = await _setup(hass)
+    aioclient_mock.get(NOMINATIM_SEARCH, json=[{
+        "lat": "55.67590", "lon": "12.56840", "address": {"municipality": "Københavns Kommune"},
+    }])
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    assert result["type"] == "form"
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {"address": "Rådhuspladsen 1, København", "location": {"latitude": LAT, "longitude": LON},
+         "municipality": "auto", "warning_area": "auto"},
+    )
+    await hass.async_block_till_done()
+    assert result["type"] == "create_entry"
+    assert entry.title == "Rådhuspladsen 1, København"
+    assert entry.options["municipality"] == "0101"
+    assert entry.options["warning_area"] == "DK008"
+    assert entry.state.name == "LOADED"
+    assert entry.runtime_data.climate.municipality == "0101"
+    assert entry.runtime_data.warnings.area == "DK008"
 
 
 async def test_radar_map_is_an_animated_gif(hass: HomeAssistant, aioclient_mock, freezer: FrozenDateTimeFactory, hass_client) -> None:
