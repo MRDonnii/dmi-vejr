@@ -75,6 +75,14 @@ def parse_climate(features: list[dict[str, Any]], tz: tzinfo) -> dict[date, dict
     return out
 
 
+def month_mean(days: dict[date, dict[str, float]], param: str, today: date) -> float | None:
+    values = [
+        v[param] for d, v in days.items()
+        if d.year == today.year and d.month == today.month and d <= today and param in v
+    ]
+    return round(sum(values) / len(values), 1) if values else None
+
+
 def month_sum(days: dict[date, dict[str, float]], param: str, today: date) -> float | None:
     values = [
         v[param] for d, v in days.items()
@@ -99,6 +107,7 @@ class Tide:
     next_high: TideExtreme | None
     next_low: TideExtreme | None
     now_cm: float | None
+    series: tuple[tuple[datetime, float], ...] = ()  # the astronomical tide prediction, cm
 
 
 def tide_extremes(
@@ -122,7 +131,7 @@ def tide_extremes(
             high = TideExtreme(when, level)
         if low is None and level < before and level <= after:
             low = TideExtreme(when, level)
-    return Tide(station_id, station_name, high, low, now_cm)
+    return Tide(station_id, station_name, high, low, now_cm, tuple(series))
 
 
 # ---------------------------------------------------------------- warnings
@@ -272,3 +281,49 @@ def current(series: list[tuple[datetime, float | None]], now: datetime) -> float
     """Value for the forecast hour containing now (or the next one)."""
     upcoming = [(t, v) for t, v in series if t > now - timedelta(hours=1)]
     return upcoming[0][1] if upcoming else None
+
+
+Series = list[tuple[datetime, float | None]]
+
+
+def to_celsius(series: Series) -> Series:
+    """HARMONIE gives temperatures in kelvin."""
+    return [(t, None if v is None else round(v - 273.15, 2) if v > 150 else v) for t, v in series]
+
+
+def window(series: Series, start: datetime, hours: int) -> Series:
+    """Values for the forecast hours from the current hour to start + hours."""
+    end = start + timedelta(hours=hours)
+    return [(t, v) for t, v in series if start - timedelta(hours=1) < t <= end and v is not None]
+
+
+def window_sum(series: Series, start: datetime, hours: int) -> float | None:
+    values = [v for _, v in window(series, start, hours)]
+    return round(sum(values), 1) if values else None
+
+
+def window_min(series: Series, start: datetime, hours: int) -> Peak:
+    values = window(series, start, hours)
+    if not values:
+        return Peak(None, None)
+    when, value = min(values, key=lambda tv: tv[1])
+    return Peak(value, when)
+
+
+def invert_percent(series: Series) -> Series:
+    """100 - p: DMI gives the chance of the opposite (e.g. visibility above 100 m)."""
+    return [(t, None if v is None else round(100 - v, 1)) for t, v in series]
+
+
+def band(data: dict[str, Any], param: str, levels: tuple[int, ...]) -> dict[int, Series]:
+    """Percentile series {level: series} from a CoverageJSON point response."""
+    return {level: coverage_series(data, f"{param}-{level}percentile") for level in levels}
+
+
+def hourly_rows(series: dict[str, Series], start: datetime, hours: int, digits: int = 1) -> list[dict[str, Any]]:
+    """[{"t": iso, key: value, ...}] for the next hours, for charts."""
+    rows: dict[datetime, dict[str, Any]] = {}
+    for key, values in series.items():
+        for t, v in window(values, start, hours):
+            rows.setdefault(t, {"t": t.isoformat()})[key] = round(v, digits)
+    return [rows[t] for t in sorted(rows)]

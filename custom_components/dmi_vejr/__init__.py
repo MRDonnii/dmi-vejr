@@ -5,10 +5,13 @@ from DMI open data: radar (500 m composite every 5 minutes) for "raining now"
 and an animated radar map with DMI lightning, the nearest DMI stations for
 every measured value they report, DMI lightning detection, DMI climate data
 for the municipality (today, yesterday, this month), water level, water
-temperature and tide at the nearest harbour, DMI's official warnings (via
-MeteoAlarm), DMI's forecast API for ensemble probabilities (frost, heavy rain,
-cloudburst, storm gusts, lightning) and DMI HARMONIE DINI (via Open-Meteo) for
-the forecast, plus an animated satellite map from EUMETSAT (DMI has no
+temperature and tide at the nearest harbour with DMI's storm surge forecast
+(DKSS), DMI's official warnings (via MeteoAlarm), DMI's forecast API for the
+ensemble (all its probabilities: frost, rain, cloudburst, snow, fog, storm,
+hurricane; and its percentiles as a spread for temperature, wind, rain and
+snow), more from HARMONIE DINI (cloud base and layers, freezing level, thunder
+energy, sun, visibility), and DMI HARMONIE DINI (via Open-Meteo) for the
+forecast, plus an animated satellite map from EUMETSAT (DMI has no
 satellite pictures in its open data). The weather entity reports measured values when they are fresh
 and follows the radar for the current condition.
 """

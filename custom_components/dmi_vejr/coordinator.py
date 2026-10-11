@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta
 from functools import partial
 import logging
@@ -24,13 +24,20 @@ from .const import (
     CONF_LONGITUDE,
     CONF_MUNICIPALITY,
     CONF_WARNING_AREA,
+    DKSS_COLLECTION,
+    DKSS_INTERVAL,
+    DKSS_PARAMETER,
     DEFAULT_MUNICIPALITY,
     DEFAULT_WARNING_AREA,
     EDR_HOURS,
     EDR_INTERVAL,
+    EDR_INVERTED,
+    EDR_PERCENTILE_LEVELS,
+    EDR_PERCENTILES,
     EDR_PROBABILITIES,
     EDR_RETRY_INTERVAL,
     EDR_SF,
+    EDR_SF_SERIES,
     EDR_URL,
     OBS_SLOW_PARAMETERS,
     OCEAN_INTERVAL,
@@ -75,12 +82,15 @@ from .extras import (
     Tide,
     Warnings,
     as_percent,
+    band,
     coverage_series,
     current,
+    invert_percent,
     parse_climate,
     parse_warnings,
     peak,
     tide_extremes,
+    to_celsius,
 )
 from .observations import (
     LightningStats,
@@ -362,6 +372,9 @@ class ClimateCoordinator(DataUpdateCoordinator[dict[date, dict[str, float]]]):
 class OceanData:
     observations: dict[str, Observation | None]
     tide: Tide | None
+    # DKSS water level forecast at the harbour, cm, hourly.
+    surge: list[tuple[datetime, float | None]] = field(default_factory=list)
+    surge_run: datetime | None = None
 
 
 class OceanCoordinator(DataUpdateCoordinator[OceanData]):
@@ -376,6 +389,9 @@ class OceanCoordinator(DataUpdateCoordinator[OceanData]):
         self._lon = entry.data[CONF_LONGITUDE]
         self._names: dict[str, str] | None = None
         self._tide_station: tuple[str, str | None] | None = None
+        self._harbour: tuple[float, float] | None = None  # (lat, lon) for the storm surge model
+        self._surge: list[tuple[datetime, float | None]] = []
+        self._surge_at: datetime | None = None
 
     async def _stations(self) -> None:
         box = bbox(self._lat, self._lon, OCEAN_SEARCH_KM)
@@ -396,7 +412,29 @@ class OceanCoordinator(DataUpdateCoordinator[OceanData]):
             dist = distance_km(self._lat, self._lon, coords[1], coords[0])
             if dist <= OCEAN_SEARCH_KM and (best is None or dist < best[0]):
                 best = (dist, f["properties"]["stationId"], f["properties"].get("name"))
+                self._harbour = (coords[1], coords[0])
         self._tide_station = (best[1], best[2]) if best else ("", None)
+
+    async def _storm_surge(self, now: datetime) -> None:
+        """DKSS water level forecast at the harbour, at most once per DKSS_INTERVAL."""
+        if self._harbour is None or (self._surge_at and now - self._surge_at < DKSS_INTERVAL):
+            return
+        lat, lon = self._harbour
+        try:
+            data = await _get_json(
+                self.hass, EDR_URL.format(collection=DKSS_COLLECTION),
+                {"coords": f"POINT({lon:.4f} {lat:.4f})", "parameter-name": DKSS_PARAMETER, "crs": "crs84"},
+                _EDR_TIMEOUT,
+            )
+        except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as err:
+            # Busy (429): try again on the next round, keep the last forecast meanwhile.
+            _LOGGER.debug("DMI storm surge forecast not available: %s", err)
+            return
+        self._surge = [
+            (t, None if v is None else round(v * 100, 1))
+            for t, v in coverage_series(data, DKSS_PARAMETER)
+        ]
+        self._surge_at = now
 
     async def _async_update_data(self) -> OceanData:
         now = dt_util.utcnow()
@@ -426,6 +464,7 @@ class OceanCoordinator(DataUpdateCoordinator[OceanData]):
                     },
                 )
                 tide = tide_extremes(predictions.get("features", []), now, station_id, station_name)
+            await self._storm_surge(now)
         except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as err:
             if self.data is not None:
                 _LOGGER.debug("DMI ocean data not available, keeping last values: %s", err)
@@ -437,7 +476,7 @@ class OceanCoordinator(DataUpdateCoordinator[OceanData]):
             )
             for key, result in zip(OCEAN_PARAMETERS.values(), results)
         }
-        return OceanData(observations, tide)
+        return OceanData(observations, tide, self._surge, self._surge_at)
 
 
 class WarningsCoordinator(DataUpdateCoordinator[Warnings]):
@@ -464,10 +503,19 @@ class EdrData:
     peaks_6h: dict[str, Peak]
     precip_type: str | None
     fetched: datetime
+    # Hourly HARMONIE DINI series (EDR_SF_SERIES keys, temperature in °C).
+    series: dict[str, list[tuple[datetime, float | None]]] = field(default_factory=dict)
+    # Ensemble percentiles {key: {10: series, 50: series, 90: series}}.
+    bands: dict[str, dict[int, list[tuple[datetime, float | None]]]] = field(default_factory=dict)
 
 
 class EdrCoordinator(DataUpdateCoordinator[EdrData]):
-    """DMI's own forecast API: HARMONIE DINI and its ensemble probabilities."""
+    """DMI's own forecast API: HARMONIE DINI and its ensemble (probabilities and percentiles).
+
+    Three requests an hour. DMI answers 429 when the API is busy; a part that
+    fails keeps its last values, and a part that has never answered is retried
+    after EDR_RETRY_INTERVAL.
+    """
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         super().__init__(
@@ -487,44 +535,70 @@ class EdrCoordinator(DataUpdateCoordinator[EdrData]):
         now = dt_util.utcnow()
         peaks: dict[str, Peak] = {}
         peaks_6h: dict[str, Peak] = {}
+        series: dict[str, list[tuple[datetime, float | None]]] = {}
+        bands: dict[str, dict[int, list[tuple[datetime, float | None]]]] = {}
         precip_type = None
         errors = []
         try:
             eps = await self._position("harmonie_dini_eps_probabilities", list(EDR_PROBABILITIES))
             for name, key in EDR_PROBABILITIES.items():
-                series = as_percent(coverage_series(eps, name))
-                peaks[key] = peak(series, now, EDR_HOURS)
-                peaks_6h[key] = peak(series, now, 6)
+                values = as_percent(coverage_series(eps, name))
+                if key in EDR_INVERTED:
+                    values = invert_percent(values)
+                peaks[key] = peak(values, now, EDR_HOURS)
+                peaks_6h[key] = peak(values, now, 6)
         except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as err:
             errors.append(f"EPS: {err}")
         try:
-            sf = await self._position("harmonie_dini_sf", list(EDR_SF))
+            pct = await self._position(
+                "harmonie_dini_eps_percentiles",
+                [f"{p}-{level}percentile" for p in EDR_PERCENTILES for level in EDR_PERCENTILE_LEVELS],
+            )
+            for name, key in EDR_PERCENTILES.items():
+                levels = band(pct, name, EDR_PERCENTILE_LEVELS)
+                if key == "temperature":
+                    levels = {level: to_celsius(values) for level, values in levels.items()}
+                bands[key] = levels
+        except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as err:
+            errors.append(f"PCT: {err}")
+        try:
+            sf = await self._position("harmonie_dini_sf", [*EDR_SF, *EDR_SF_SERIES])
             lightning = [
                 (t, None if v is None else round(v * 100, 1))
                 for t, v in coverage_series(sf, "probability-of-lightning")
             ]
             peaks["lightning"] = peak(lightning, now, EDR_HOURS)
             peaks_6h["lightning"] = peak(lightning, now, 6)
+            series["lightning"] = lightning
+            for name, key in EDR_SF_SERIES.items():
+                values = coverage_series(sf, name)
+                series[key] = to_celsius(values) if key == "temperature" else values
             kind = current(coverage_series(sf, "precipitation-type"), now)
             precip_type = None if kind is None else PRECIP_TYPES.get(int(kind))
         except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as err:
             errors.append(f"DINI: {err}")
-        if len(errors) == 2:
+        if len(errors) == 3:
             # DMI answers 429 when the forecast API is busy; keep the last values.
             if self.data is not None and now - self.data.fetched < timedelta(hours=6):
                 _LOGGER.debug("DMI forecast API unavailable, keeping last values: %s", errors)
                 return self.data
             self.update_interval = EDR_RETRY_INTERVAL
             raise UpdateFailed(f"DMI forecast API not available: {'; '.join(errors)}")
-        if self.data is not None:  # keep the half that failed this time
+        if self.data is not None:  # keep the parts that failed this time
             peaks = {**self.data.peaks, **peaks}
             peaks_6h = {**self.data.peaks_6h, **peaks_6h}
+            series = {**self.data.series, **series}
+            bands = {**self.data.bands, **bands}
             if any(e.startswith("DINI") for e in errors):
                 precip_type = self.data.precip_type
-        # A half that has never answered is retried soon, not after an hour.
-        complete = "lightning" in peaks and all(k in peaks for k in EDR_PROBABILITIES.values())
+        # A part that has never answered is retried soon, not after an hour.
+        complete = (
+            "lightning" in peaks
+            and all(k in peaks for k in EDR_PROBABILITIES.values())
+            and all(k in bands for k in EDR_PERCENTILES.values())
+        )
         self.update_interval = EDR_INTERVAL if complete else EDR_RETRY_INTERVAL
-        return EdrData(peaks, peaks_6h, precip_type, now)
+        return EdrData(peaks, peaks_6h, precip_type, now, series, bands)
 
 
 class ForecastCoordinator(DataUpdateCoordinator[dict[str, Any]]):

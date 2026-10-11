@@ -86,8 +86,10 @@ def _climate_day(day: str, values: dict) -> list:
 
 # Real shapes from DMI climateData (Randers Kommune), today's value is "so far".
 CLIMATE = {"features": (
-    _climate_day("2026-10-08", {"acc_precip": 4.6, "acc_heating_degree_days_17": 5.7, "mean_temp": 11.3})
-    + _climate_day("2026-10-07", {"acc_precip": 1.3, "acc_heating_degree_days_17": 6.1})
+    _climate_day("2026-10-08", {"acc_precip": 4.6, "acc_heating_degree_days_17": 5.7, "mean_temp": 11.3,
+                                "leaf_moisture": 1380.0, "no_frost_days": 0.0})
+    + _climate_day("2026-10-07", {"acc_precip": 1.3, "acc_heating_degree_days_17": 6.1, "mean_temp": 9.7,
+                                  "no_frost_days": 1.0})
     + _climate_day("2026-10-01", {"acc_heating_degree_days_17": 4.0})
     + _climate_day("2026-09-30", {"acc_heating_degree_days_17": 9.9})  # previous month
 )}
@@ -151,7 +153,31 @@ EDR_EPS = _coverage({
     "total-precipitation-above-30mm-in-3hours-probability": [0],
     "gust-wind-speed-10m-above-25ms-within-1hour-probability": [0],
 })
-EDR_SF = _coverage({"probability-of-lightning": [0.02, 0.12, 0.0], "precipitation-type": [1]})
+EDR_EPS["ranges"]["visibility-above-100m-probability"] = {"values": [100, 100, 70] + [100] * 26}
+EDR_SF = _coverage({
+    "probability-of-lightning": [0.02, 0.12, 0.0], "precipitation-type": [1],
+    "temperature-2m": [282.15], "cloud-base": [850.0], "low-cloud-cover": [90.0],
+    "medium-cloud-cover": [20.0], "high-cloud-cover": [5.0],
+    "convective-available-potential-energy": [10.0, 250.0, 40.0], "0-degrees-c-isothermal-level": [1200.0],
+    "downward-short-wave-radiation-flux-instant": [100.0], "visibility": [12000.0],
+    "snow-depth-water-equivalent": [0.0],
+})
+# Ensemble percentiles; temperature in kelvin like DMI sends it.
+EDR_PCT = _coverage({
+    "temperature-2m-10percentile": [276.15, 275.15, 277.15], "temperature-2m-50percentile": [279.15],
+    "temperature-2m-90percentile": [282.15, 284.15, 283.15],
+    "gust-wind-speed-10m-1h-10percentile": [5.0], "gust-wind-speed-10m-1h-50percentile": [8.0],
+    "gust-wind-speed-10m-1h-90percentile": [12.0, 15.5, 11.0],
+    "wind-speed-10m-10percentile": [2.0], "wind-speed-10m-50percentile": [4.0, 6.5],
+    "wind-speed-10m-90percentile": [7.0],
+    "total-precipitation-1h-10percentile": [0.0], "total-precipitation-1h-50percentile": [0.1],
+    "total-precipitation-1h-90percentile": [0.5],
+    "time-integral-of-total-solid-precipitation-flux-1h-10percentile": [0.0],
+    "time-integral-of-total-solid-precipitation-flux-1h-50percentile": [0.0],
+    "time-integral-of-total-solid-precipitation-flux-1h-90percentile": [0.0],
+})
+# DKSS storm surge forecast in metres, rising to 0.62 m.
+DKSS = _coverage({"sea-mean-deviation": [0.10, 0.20, 0.35, 0.50, 0.62, 0.40, 0.20, 0.05]})
 
 
 def _mock_apis(aioclient_mock, radar=RADAR_H5, forecast=FORECAST, observations=OBSERVATIONS, edr_status=200):
@@ -166,6 +192,8 @@ def _mock_apis(aioclient_mock, radar=RADAR_H5, forecast=FORECAST, observations=O
         aioclient_mock.get(re.compile(r"https://opendataapi\.dmi\.dk/v1/forecastedr/.*"), status=edr_status)
     aioclient_mock.get(re.compile(r"https://opendataapi\.dmi\.dk/v1/forecastedr/collections/harmonie_dini_eps_probabilities/.*"), json=EDR_EPS)
     aioclient_mock.get(re.compile(r"https://opendataapi\.dmi\.dk/v1/forecastedr/collections/harmonie_dini_sf/.*"), json=EDR_SF)
+    aioclient_mock.get(re.compile(r"https://opendataapi\.dmi\.dk/v1/forecastedr/collections/harmonie_dini_eps_percentiles/.*"), json=EDR_PCT)
+    aioclient_mock.get(re.compile(r"https://opendataapi\.dmi\.dk/v1/forecastedr/collections/dkss_idw/.*"), json=DKSS)
     aioclient_mock.get(re.compile(r"https://opendataapi\.dmi\.dk/v1/radardata/collections/.*"), json=LISTING)
     aioclient_mock.get(RADAR_HREF, content=radar)
     aioclient_mock.get(re.compile(r"https://opendataapi\.dmi\.dk/v2/metObs/collections/station/.*"), json=STATIONS)
@@ -489,8 +517,8 @@ async def test_one_station_request_and_last_values_kept(hass: HomeAssistant, aio
     _mock_apis(aioclient_mock)
     entry = await _setup(hass)
     station_calls = [c for c in aioclient_mock.mock_calls if "metObs/collections/observation" in str(c[1])]
-    # One combined request plus the three slow ones, not one per parameter.
-    assert len(station_calls) == 4
+    # One combined request plus the four slow ones, not one per parameter.
+    assert len(station_calls) == 5
     # DMI busy: the last values stay (they age out by themselves).
     aioclient_mock.clear_requests()
     aioclient_mock.get(re.compile(r"https://opendataapi\.dmi\.dk/.*"), status=429)
@@ -566,3 +594,46 @@ def test_satellite_render_is_animated_webp():
     data = sat.render_frames(frames, None, view)
     with Image.open(io.BytesIO(data)) as img:
         assert img.format == "WEBP" and img.n_frames == 3 and img.size == (200, 200)
+
+
+async def test_everything_else_dmi_offers(hass: HomeAssistant, aioclient_mock, freezer: FrozenDateTimeFactory) -> None:
+    freezer.move_to(NOW)
+    _mock_apis(aioclient_mock)
+    await _setup(hass)
+
+    def state(entity_id):
+        st = hass.states.get(entity_id)
+        assert st is not None, entity_id
+        return st
+
+    # Every other station value DMI reports comes from the same request.
+    assert float(state("sensor.dmi_vejr_middeltemperatur_sidste_time").state) == 9.3
+    assert float(state("sensor.dmi_vejr_laveste_vind_sidste_time").state) == 9.3
+    assert state("sensor.dmi_vejr_snedaekke").state == "9.3"
+    # Climate data: more day values and the month so far.
+    assert float(state("sensor.dmi_vejr_nedbor_denne_maned").state) == 5.9
+    assert float(state("sensor.dmi_vejr_middeltemperatur_denne_maned").state) == 10.5
+    assert float(state("sensor.dmi_vejr_frostdage_denne_maned").state) == 1
+    assert float(state("sensor.dmi_vejr_bladfugt_seneste_dogn").state) == 23  # 1380 min shown in hours
+    # Ensemble probabilities: fog is the opposite of "visibility above 100 m".
+    assert float(state("sensor.dmi_vejr_tagerisiko_naeste_dogn").state) == 30
+    assert state("sensor.dmi_vejr_risiko_for_orkanstod_naeste_dogn").state == "unavailable"  # not in this data
+    # Ensemble percentiles: the spread of the next day, temperature in °C.
+    low = state("sensor.dmi_vejr_laveste_temperatur_naeste_dogn_ensemble_10")
+    assert float(low.state) == 2.0 and low.attributes["median"] == 6.0
+    assert low.attributes["timer"][0] == {"t": "2026-10-08T18:00:00+00:00", "p10": 2.0, "p50": 6.0, "p90": 11.0}
+    assert float(state("sensor.dmi_vejr_hojeste_temperatur_naeste_dogn_ensemble_90").state) == 11.0
+    assert float(state("sensor.dmi_vejr_kraftigste_vindstod_naeste_dogn_ensemble_90").state) == 15.5
+    rain = state("sensor.dmi_vejr_nedbor_naeste_dogn_ensemble_median")
+    assert float(rain.state) == 2.5 and rain.attributes["op_til_90_procent"] == 12.5  # 25 hours
+    # HARMONIE DINI series: cloud base, freezing level, thunder energy, sun.
+    assert float(state("sensor.dmi_vejr_skybase_prognose").state) == 850
+    assert float(state("sensor.dmi_vejr_nulgradsgraense_hojde").state) == 1200
+    cape = state("sensor.dmi_vejr_tordenenergi_cape")
+    assert cape.attributes["højeste_næste_døgn"] == 250
+    assert float(state("sensor.dmi_vejr_solenergi_naeste_dogn").state) == 2.5
+    # DKSS storm surge: the water level ahead at the harbour, with the tide table beside it.
+    surge = state("sensor.dmi_vejr_vandstand_prognose")
+    assert float(surge.state) == 20  # 18:00Z, the hour containing now
+    assert surge.attributes["højeste_næste_48_timer"] == 62.0
+    assert surge.attributes["timer"][0] == {"t": "2026-10-08T18:00:00+00:00", "cm": 20, "tidevand": -6}
