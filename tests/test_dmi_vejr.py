@@ -153,9 +153,9 @@ EDR_EPS = _coverage({
     "total-precipitation-above-30mm-in-3hours-probability": [0],
     "gust-wind-speed-10m-above-25ms-within-1hour-probability": [0],
 })
-EDR_EPS["ranges"]["visibility-above-100m-probability"] = {"values": [100, 100, 70] + [100] * 26}
+EDR_EPS["ranges"]["visibility-above-100m-probability"] = {"values": [0, 0, 30] + [0] * 26}
 EDR_SF = _coverage({
-    "probability-of-lightning": [0.02, 0.12, 0.0], "precipitation-type": [1],
+    "probability-of-lightning": [2.0, 12.0, 0.0], "precipitation-type": [1],
     "temperature-2m": [282.15], "cloud-base": [850.0], "low-cloud-cover": [90.0],
     "medium-cloud-cover": [20.0], "high-cloud-cover": [5.0],
     "convective-available-potential-energy": [10.0, 250.0, 40.0], "0-degrees-c-isothermal-level": [1200.0],
@@ -615,7 +615,7 @@ async def test_everything_else_dmi_offers(hass: HomeAssistant, aioclient_mock, f
     assert float(state("sensor.dmi_vejr_middeltemperatur_denne_maned").state) == 10.5
     assert float(state("sensor.dmi_vejr_frostdage_denne_maned").state) == 1
     assert float(state("sensor.dmi_vejr_bladfugt_seneste_dogn").state) == 23  # 1380 min shown in hours
-    # Ensemble probabilities: fog is the opposite of "visibility above 100 m".
+    # Ensemble probabilities, fog among them.
     assert float(state("sensor.dmi_vejr_tagerisiko_naeste_dogn").state) == 30
     assert state("sensor.dmi_vejr_risiko_for_orkanstod_naeste_dogn").state == "unavailable"  # not in this data
     # Ensemble percentiles: the spread of the next day, temperature in °C.

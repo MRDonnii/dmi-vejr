@@ -567,8 +567,9 @@ class EdrCoordinator(DataUpdateCoordinator[EdrData]):
         await asyncio.sleep(EDR_SPACING_S)
         try:
             sf = await self._position("harmonie_dini_sf", [*EDR_SF, *EDR_SF_SERIES])
+            # HARMONIE gives the lightning probability in percent already.
             lightning = [
-                (t, None if v is None else round(v * 100, 1))
+                (t, None if v is None else round(v, 1))
                 for t, v in coverage_series(sf, "probability-of-lightning")
             ]
             peaks["lightning"] = peak(lightning, now, EDR_HOURS)

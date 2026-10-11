@@ -142,11 +142,11 @@ EDR_PROBABILITIES = {
     "time-integral-of-total-solid-precipitation-flux-above-5mm-in-6hours-probability": "snow_5mm",
     "time-integral-of-total-solid-precipitation-flux-above-10mm-in-6hours-probability": "snow_10mm",
     "time-integral-of-total-solid-precipitation-flux-above-15mm-in-6hours-probability": "snow_15mm",
-    # DMI gives the chance of seeing further than 100 m; fog is the rest.
+    # Despite the name, DMI's values are the chance of fog (0 in clear weather).
     "visibility-above-100m-probability": "fog",
 }
-# Probabilities DMI gives as "the opposite" of the event shown.
-EDR_INVERTED = {"fog"}
+# Probabilities DMI gives as "the opposite" of the event shown (none so far).
+EDR_INVERTED: set[str] = set()
 # Ensemble spread: 10th, 50th and 90th percentile per hour.
 EDR_PERCENTILES = {
     "temperature-2m": "temperature",
