@@ -1,0 +1,16 @@
+{
+  "domain": "dmi_vejr",
+  "name": "DMI Vejr",
+  "codeowners": [
+    "@MRDonnii"
+  ],
+  "config_flow": true,
+  "integration_type": "service",
+  "iot_class": "cloud_polling",
+  "requirements": [
+    "h5py==3.16.0",
+    "pillow"
+  ],
+  "single_config_entry": true,
+  "version": "0.3.7"
+}

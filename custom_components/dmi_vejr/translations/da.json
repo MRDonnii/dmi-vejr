@@ -1,0 +1,19 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "DMI Vejr",
+        "description": "DMI radar, stationer, lyn, klimadata, havn, varsler og HARMONIE. Placering er som standard Hjem. Kommune 0730 = Randers; varslingsområde DK004 = Østjylland.",
+        "data": {
+          "latitude": "Breddegrad",
+          "longitude": "Længdegrad",
+          "municipality": "Kommunenummer (DMI klimadata)",
+          "warning_area": "Varslingsområde (EMMA-id)"
+        }
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "DMI Vejr er allerede sat op."
+    }
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "DMI Vejr",
+        "description": "DMI radar, stations, lightning, climate data, harbour, warnings and HARMONIE. The location defaults to Home. Municipality 0730 = Randers; warning area DK004 = East Jutland.",
+        "data": {
+          "latitude": "Latitude",
+          "longitude": "Longitude",
+          "municipality": "Municipality number (DMI climate data)",
+          "warning_area": "Warning area (EMMA id)"
+        }
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "DMI Vejr is already set up."
+    }
+  }
+}
