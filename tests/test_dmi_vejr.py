@@ -589,6 +589,73 @@ async def test_missing_ensemble_half_retries_soon(hass: HomeAssistant, aioclient
     assert edr.update_interval == EDR_INTERVAL
 
 
+class _FakeResponse:
+    def __init__(self, status: int, headers: dict | None = None) -> None:
+        self.status = status
+        self.headers = headers or {}
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc) -> None:
+        return None
+
+    def raise_for_status(self) -> None:
+        if self.status >= 400:
+            import aiohttp
+
+            raise aiohttp.ClientResponseError(None, (), status=self.status)
+
+    async def json(self, content_type=None) -> dict:
+        return {"ok": True}
+
+
+class _FakeSession:
+    def __init__(self, statuses: list[int]) -> None:
+        self.statuses = statuses
+        self.calls = 0
+
+    def get(self, url, params=None, timeout=None) -> _FakeResponse:
+        status = self.statuses[min(self.calls, len(self.statuses) - 1)]
+        self.calls += 1
+        return _FakeResponse(status, {"Retry-After": "0"} if status == 429 else None)
+
+
+async def test_busy_request_is_retried_before_giving_up(hass: HomeAssistant, monkeypatch) -> None:
+    import aiohttp
+
+    from custom_components.dmi_vejr import coordinator
+
+    session = _FakeSession([429, 429, 200])
+    monkeypatch.setattr(coordinator, "async_get_clientsession", lambda _hass: session)
+    assert await coordinator._get_json(hass, "https://x", None, retry_busy=(0, 0)) == {"ok": True}
+    assert session.calls == 3
+
+    # Still busy after the last retry: the error reaches the caller (the part is retried later).
+    session = _FakeSession([429])
+    monkeypatch.setattr(coordinator, "async_get_clientsession", lambda _hass: session)
+    with pytest.raises(aiohttp.ClientResponseError):
+        await coordinator._get_json(hass, "https://x", None, retry_busy=(0, 0))
+    assert session.calls == 3
+
+    # Without retries (everything but the forecast API) it fails at once, as before.
+    session = _FakeSession([429])
+    monkeypatch.setattr(coordinator, "async_get_clientsession", lambda _hass: session)
+    with pytest.raises(aiohttp.ClientResponseError):
+        await coordinator._get_json(hass, "https://x", None)
+    assert session.calls == 1
+
+
+def test_retry_after_header() -> None:
+    from custom_components.dmi_vejr.coordinator import _retry_after
+
+    assert _retry_after("12", 8.0) == 12
+    assert _retry_after("9999", 8.0) == 60
+    assert _retry_after("0", 8.0) == 8.0
+    assert _retry_after(None, 8.0) == 8.0
+    assert _retry_after("Wed, 21 Oct 2026 07:28:00 GMT", 8.0) == 8.0
+
+
 def test_weather_codes() -> None:
     from custom_components.dmi_vejr.extras import weather_text
 

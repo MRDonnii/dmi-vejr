@@ -28,4 +28,5 @@ def _no_edr_spacing(monkeypatch):
     from custom_components.dmi_vejr import coordinator
 
     monkeypatch.setattr(coordinator, "EDR_SPACING_S", 0)
+    monkeypatch.setattr(coordinator, "EDR_BUSY_RETRY_S", (0, 0))
     yield

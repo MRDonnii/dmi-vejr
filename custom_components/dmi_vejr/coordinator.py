@@ -114,6 +114,9 @@ _DMI_CONCURRENCY = 2
 _OBS_PAGE = 10000
 # DMI's forecast API answers 429 to requests that come back to back; space them out.
 EDR_SPACING_S = 3.0
+# When it still answers 429, wait and try the same request again before giving the part up.
+EDR_BUSY_RETRY_S = (8.0, 20.0)
+_RETRY_AFTER_MAX_S = 60.0
 
 _CURRENT = (
     "temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,"
@@ -139,12 +142,26 @@ async def _get_json(
     url: str,
     params: dict[str, Any] | None = None,
     timeout: aiohttp.ClientTimeout = _TIMEOUT,
+    retry_busy: tuple[float, ...] = (),
 ) -> Any:
     session = async_get_clientsession(hass)
     slots = hass.data.setdefault("dmi_vejr_request_slots", asyncio.Semaphore(_DMI_CONCURRENCY))
-    async with slots, session.get(url, params=params, timeout=timeout) as resp:
-        resp.raise_for_status()
-        return await resp.json(content_type=None)
+    for delay in (*retry_busy, None):
+        async with slots, session.get(url, params=params, timeout=timeout) as resp:
+            if resp.status != 429 or delay is None:
+                resp.raise_for_status()
+                return await resp.json(content_type=None)
+            wait = _retry_after(resp.headers.get("Retry-After"), delay)
+        # The request slot is free again while we wait.
+        await asyncio.sleep(wait)
+
+
+def _retry_after(header: str | None, fallback: float) -> float:
+    try:
+        seconds = float(header)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return fallback
+    return min(seconds, _RETRY_AFTER_MAX_S) if seconds > 0 else fallback
 
 
 def _iso(value: datetime) -> str:
@@ -532,6 +549,7 @@ class EdrCoordinator(DataUpdateCoordinator[EdrData]):
             self.hass, EDR_URL.format(collection=collection),
             {"coords": self._coords, "parameter-name": ",".join(names), "crs": "crs84"},
             _EDR_TIMEOUT,
+            EDR_BUSY_RETRY_S,
         )
 
     async def _async_update_data(self) -> EdrData:
