@@ -466,7 +466,12 @@ async def test_stale_station_values_fall_back_to_model(hass: HomeAssistant, aioc
     old = _every_parameter([_station("06049", "Hald Vest", 10.0929, 56.5604, 9.3, "2026-10-08T16:00:00Z")])
     _mock_apis(aioclient_mock, observations=old)
     await _setup(hass)
-    assert hass.states.get("sensor.dmi_vejr_temperatur").state == "unavailable"
+    # The station reading is too old: the sensor keeps a value from the model (a reserve for e.g. Better Thermostat).
+    temp = hass.states.get("sensor.dmi_vejr_temperatur")
+    assert float(temp.state) == FORECAST["current"]["temperature_2m"]
+    assert temp.attributes["kilde"].startswith("DMI-prognose") and temp.attributes["station"] == "Hald Vest"
+    assert float(hass.states.get("sensor.dmi_vejr_vindhastighed").state) == FORECAST["current"]["wind_speed_10m"]
+    assert hass.states.get("sensor.dmi_vejr_graestemperatur").state == "unavailable", "no model value for it"
     assert hass.states.get("weather.dmi_vejr").attributes["temperature"] == FORECAST["current"]["temperature_2m"]
 
 
@@ -480,7 +485,7 @@ async def test_station_outage_does_not_block_setup(hass: HomeAssistant, aioclien
     aioclient_mock.get(re.compile(re.escape(FORECAST_URL) + ".*"), json=FORECAST)
     entry = await _setup(hass)
     assert entry.state.name == "LOADED"
-    assert hass.states.get("sensor.dmi_vejr_temperatur").state == "unavailable"
+    assert float(hass.states.get("sensor.dmi_vejr_temperatur").state) == FORECAST["current"]["temperature_2m"], "reserve"
     assert hass.states.get("weather.dmi_vejr").state == "rainy"
 
 

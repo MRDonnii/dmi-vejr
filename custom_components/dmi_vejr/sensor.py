@@ -670,12 +670,39 @@ class RadarSensor(CoordinatorEntity[RadarCoordinator], _Base):
         return None
 
 
+# When DMI's stations are late (their open data stopped for all stations on 2026-10-15), these readings fall back to the
+# forecast model's "now" values, like the weather entity does, so Better Thermostat and others keep an outdoor value.
+MODEL_FALLBACK = {
+    "temperature": "temperature_2m", "humidity": "relative_humidity_2m", "pressure": "pressure_msl",
+    "wind_speed": "wind_speed_10m", "wind_gust": "wind_gusts_10m", "wind_bearing": "wind_direction_10m",
+    "dew_point": "dew_point_2m",
+}
+
+
 class ObservationSensor(CoordinatorEntity[ObservationCoordinator], _Base):
     entity_description: ObsSensorDescription
+    _fallback_keys = MODEL_FALLBACK
 
     def __init__(self, entry: DmiVejrConfigEntry, coordinator, description: ObsSensorDescription) -> None:
         super().__init__(coordinator)
         self._setup(entry, description)
+        self._model_key = self._fallback_keys.get(description.key)
+        self._forecast = getattr(getattr(entry, "runtime_data", None), "forecast", None) if self._model_key else None
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        if self._forecast is not None:
+            self.async_on_remove(self._forecast.async_add_listener(self.async_write_ha_state))
+
+    def _model_value(self) -> Any:
+        """The forecast model's value now, when the station reading is missing or too old."""
+        if self._forecast is None or not self._forecast.data:
+            return None
+        value = (self._forecast.data.get("current") or {}).get(self._model_key)
+        return value if isinstance(value, (int, float)) else None
+
+    def _fresh(self) -> bool:
+        return obs_fresh(self._obs, self.entity_description.max_age)
 
     @property
     def _obs(self):
@@ -686,20 +713,27 @@ class ObservationSensor(CoordinatorEntity[ObservationCoordinator], _Base):
 
     @property
     def available(self) -> bool:
-        return (
-            super().available
-            and obs_fresh(self._obs, self.entity_description.max_age)
-            and self.native_value is not None
-        )
+        if self._fresh():
+            return super().available and self.native_value is not None
+        return self._model_value() is not None
 
     @property
     def native_value(self) -> Any:
         obs = self._obs
+        if obs is not None and self._fresh():
+            return self.entity_description.value(obs.value)
+        model = self._model_value()
+        if model is not None:
+            return self.entity_description.value(model)
         return self.entity_description.value(obs.value) if obs else None
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
         obs = self._obs
+        if not self._fresh() and self._model_value() is not None:
+            # Shown as a reserve: the model's value, and when the station last measured.
+            return {"kilde": "DMI-prognose (stationsmålinger forsinket)",
+                    **({"sidst_målt": obs.observed.isoformat(), "station": obs.station_name or obs.station_id} if obs else {})}
         if obs is None:
             return None
         attrs = {
@@ -714,6 +748,8 @@ class ObservationSensor(CoordinatorEntity[ObservationCoordinator], _Base):
 
 
 class OceanSensor(ObservationSensor):
+    _fallback_keys: dict[str, str] = {}
+
     def __init__(self, entry: DmiVejrConfigEntry, description: ObsSensorDescription) -> None:
         super().__init__(entry, entry.runtime_data.ocean, description)
 
