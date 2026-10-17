@@ -7,7 +7,7 @@ model said clear sky (WMO 0) and no precipitation.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
 import re
@@ -18,7 +18,14 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from homeassistant.core import HomeAssistant
 
-from custom_components.dmi_vejr.const import DOMAIN, EDR_INTERVAL, EDR_RETRY_INTERVAL, FORECAST_URL
+from custom_components.dmi_vejr.const import (
+    DOMAIN,
+    EDR_INTERVAL,
+    EDR_RETRY_INTERVAL,
+    FORECAST_INTERVAL,
+    FORECAST_RETRY_INTERVAL,
+    FORECAST_URL,
+)
 from custom_components.dmi_vejr.radar import parse_composite, read_window, stereographic
 from custom_components.dmi_vejr.radar_map import RadarFrame, render_frames
 
@@ -574,6 +581,34 @@ async def test_busy_forecast_api_retries_soon_until_first_data(hass: HomeAssista
     await hass.async_block_till_done()
     assert float(hass.states.get("sensor.dmi_vejr_lynrisiko_naeste_dogn").state) == 12.0
     assert edr.update_interval == EDR_INTERVAL
+
+
+async def test_forecast_outage_keeps_last_forecast(hass: HomeAssistant, aioclient_mock, freezer: FrozenDateTimeFactory) -> None:
+    freezer.move_to(NOW)
+    _mock_apis(aioclient_mock)
+    entry = await _setup(hass)
+    forecast = entry.runtime_data.forecast
+    # Open-Meteo answers 503 once: the weather stays and is asked for again soon.
+    aioclient_mock.clear_requests()
+    aioclient_mock.get(re.compile(re.escape(FORECAST_URL) + ".*"), status=503)
+    _mock_apis(aioclient_mock)
+    freezer.tick(timedelta(minutes=30))
+    await forecast.async_refresh()
+    await hass.async_block_till_done()
+    assert hass.states.get("weather.dmi_vejr").state != "unavailable"
+    assert forecast.update_interval == FORECAST_RETRY_INTERVAL
+    # Still down after two hours: now the weather is unavailable.
+    freezer.tick(timedelta(hours=2))
+    await forecast.async_refresh()
+    await hass.async_block_till_done()
+    assert hass.states.get("weather.dmi_vejr").state == "unavailable"
+    # Back again: the normal pace returns.
+    aioclient_mock.clear_requests()
+    _mock_apis(aioclient_mock)
+    await forecast.async_refresh()
+    await hass.async_block_till_done()
+    assert hass.states.get("weather.dmi_vejr").state != "unavailable"
+    assert forecast.update_interval == FORECAST_INTERVAL
 
 
 async def test_missing_ensemble_half_retries_soon(hass: HomeAssistant, aioclient_mock, freezer: FrozenDateTimeFactory) -> None:

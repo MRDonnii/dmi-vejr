@@ -51,6 +51,8 @@ from .const import (
     WARNINGS_INTERVAL,
     WARNINGS_URL,
     FORECAST_INTERVAL,
+    FORECAST_MAX_AGE,
+    FORECAST_RETRY_INTERVAL,
     FORECAST_MODEL,
     FORECAST_URL,
     LIGHTNING_INTERVAL,
@@ -635,8 +637,28 @@ class ForecastCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
         self._lat = entry_settings(entry)[CONF_LATITUDE]
         self._lon = entry_settings(entry)[CONF_LONGITUDE]
+        self._fetched: datetime | None = None
 
     async def _async_update_data(self) -> dict[str, Any]:
+        try:
+            data = await self._fetch()
+        except UpdateFailed as err:
+            # A short outage keeps the last forecast; the weather goes unavailable
+            # only when it is older than FORECAST_MAX_AGE.
+            self.update_interval = FORECAST_RETRY_INTERVAL
+            if (
+                self.data is not None
+                and self._fetched is not None
+                and dt_util.utcnow() - self._fetched < FORECAST_MAX_AGE
+            ):
+                _LOGGER.debug("%s, keeping the last forecast", err)
+                return self.data
+            raise
+        self._fetched = dt_util.utcnow()
+        self.update_interval = FORECAST_INTERVAL
+        return data
+
+    async def _fetch(self) -> dict[str, Any]:
         base = {
             "latitude": f"{self._lat:.4f}",
             "longitude": f"{self._lon:.4f}",

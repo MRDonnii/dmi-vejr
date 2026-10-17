@@ -344,7 +344,7 @@ CLIMATE_SENSORS = (
              UnitOfTime.HOURS, SensorDeviceClass.DURATION, True, suggested_display_precision=1,
              icon="mdi:weather-sunny"),
     _climate("climate_degree_days_today", "acc_heating_degree_days_17", "Graddage i dag",
-             "graddage", None, True, suggested_display_precision=1, icon="mdi:home-thermometer"),
+             "graddage", None, False, suggested_display_precision=1, icon="mdi:home-thermometer"),
     _climate("climate_degree_days_month", "acc_heating_degree_days_17", "Graddage denne måned",
              "graddage", None, False, suggested_display_precision=1, icon="mdi:home-thermometer",
              month_total=True),

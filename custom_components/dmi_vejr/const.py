@@ -194,6 +194,9 @@ SAT_SIZE = 783
 
 RADAR_INTERVAL = timedelta(minutes=5)
 FORECAST_INTERVAL = timedelta(minutes=30)
+# Open-Meteo answers 503 now and then; keep the last forecast and ask again soon.
+FORECAST_RETRY_INTERVAL = timedelta(minutes=5)
+FORECAST_MAX_AGE = timedelta(hours=2)
 # Radar is published 10-15 minutes after scan time; older than this is stale.
 RADAR_MAX_AGE = timedelta(minutes=35)
 
